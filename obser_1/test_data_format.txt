@@ -1,0 +1,5 @@
+<MAC>;Command;
+
+e.g.
+AC:67:B2:3C:A0:38;blink;
+AC:67:B2:3C:A0:38;stop;
