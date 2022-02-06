@@ -22,7 +22,7 @@
 #include "cJSON.h"
 
 // #define MEMORY_DEBUG
-static const char *TAG = "3CIOT";
+static const char *TAG = "3CIOT:ROOT";
 
 //--------Serial Port Config Start----------
 static const int RX_BUF_SIZE = 1024;
@@ -72,10 +72,10 @@ static void root_task(void *arg)
         MDF_ERROR_CONTINUE(ret != MDF_OK, "<%s> mwifi_root_read", mdf_err_to_name(ret));
         MDF_LOGI("Root receive, addr: " MACSTR ", size: %d, data: %s", MAC2STR(src_addr), size, data);
 
-        size = sprintf(data, "(%d) Hello node!", i);
-        ret = mwifi_root_write(src_addr, 1, &data_type, data, size, true);
-        MDF_ERROR_CONTINUE(ret != MDF_OK, "mwifi_root_recv, ret: %x", ret);
-        MDF_LOGI("Root send, addr: " MACSTR ", size: %d, data: %s", MAC2STR(src_addr), size, data);
+        // size = sprintf(data, "(%d) Hello node!", i);
+        // ret = mwifi_root_write(src_addr, 1, &data_type, data, size, true);
+        // MDF_ERROR_CONTINUE(ret != MDF_OK, "mwifi_root_recv, ret: %x", ret);
+        // MDF_LOGI("Root send, addr: " MACSTR ", size: %d, data: %s", MAC2STR(src_addr), size, data);
     }
 
     MDF_LOGW("Root is exit");
@@ -103,6 +103,8 @@ static void write_task(uint8_t *dest_addr, char *data_sent)
 
     size = asprintf(&data,"%s",data_sent);
 	ret = mwifi_write(dest_addr, &data_type, data, size, true);        
+
+    MDF_LOGI("Data Sent to the node, addr: " MACSTR " ", MAC2STR(dest_addr));
 
     MDF_FREE(data);
 }
@@ -249,7 +251,7 @@ void app_main()
     
 
     // To Print system info at regualr interval
-    TimerHandle_t timer = xTimerCreate("print_system_info", 100000 / portTICK_RATE_MS,
+    TimerHandle_t timer = xTimerCreate("print_system_info", 10000 / portTICK_RATE_MS,
                                        true, NULL, print_system_info_timercb);
     xTimerStart(timer, 0);
 
@@ -280,6 +282,8 @@ void app_main()
         // convert MAC string to the compatible MAC address array
         sscanf(MAC_add, "%hhx:%hhx:%hhx:%hhx:%hhx:%hhx",&MAC_addr[0], &MAC_addr[1], &MAC_addr[2],&MAC_addr[3], &MAC_addr[4], &MAC_addr[5] );
         
+        // send data to specified node
+        write_task(MAC_addr,cmd); //asking node to send data
         
         }
 

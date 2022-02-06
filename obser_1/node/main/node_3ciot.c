@@ -14,44 +14,17 @@
 
 #include "mdf_common.h"
 #include "mwifi.h"
+#include "driver/gpio.h"
+#include "string.h"
 
 // #define MEMORY_DEBUG
+#define BLINK_GPIO 2 // LED is connected at this Pin
 
-static const char *TAG = "get_started";
+static const char *TAG = "3CIOT:NODE";
 
-static void root_task(void *arg)
-{
-    mdf_err_t ret                    = MDF_OK;
-    char *data                       = MDF_MALLOC(MWIFI_PAYLOAD_LEN);
-    size_t size                      = MWIFI_PAYLOAD_LEN;
-    uint8_t src_addr[MWIFI_ADDR_LEN] = {0x0};
-    mwifi_data_type_t data_type      = {0};
+int8_t blink_status = 0;
+int8_t gpio_state = 0;
 
-    MDF_LOGI("Root is running");
-
-    for (int i = 0;; ++i) {
-        if (!mwifi_is_started()) {
-            vTaskDelay(500 / portTICK_RATE_MS);
-            continue;
-        }
-
-        size = MWIFI_PAYLOAD_LEN;
-        memset(data, 0, MWIFI_PAYLOAD_LEN);
-        ret = mwifi_root_read(src_addr, &data_type, data, &size, portMAX_DELAY);
-        MDF_ERROR_CONTINUE(ret != MDF_OK, "<%s> mwifi_root_read", mdf_err_to_name(ret));
-        MDF_LOGI("Root receive, addr: " MACSTR ", size: %d, data: %s", MAC2STR(src_addr), size, data);
-
-        size = sprintf(data, "(%d) Hello node!", i);
-        ret = mwifi_root_write(src_addr, 1, &data_type, data, size, true);
-        MDF_ERROR_CONTINUE(ret != MDF_OK, "mwifi_root_recv, ret: %x", ret);
-        MDF_LOGI("Root send, addr: " MACSTR ", size: %d, data: %s", MAC2STR(src_addr), size, data);
-    }
-
-    MDF_LOGW("Root is exit");
-
-    MDF_FREE(data);
-    vTaskDelete(NULL);
-}
 
 static void node_read_task(void *arg)
 {
@@ -60,6 +33,10 @@ static void node_read_task(void *arg)
     size_t size   = MWIFI_PAYLOAD_LEN;
     mwifi_data_type_t data_type      = {0x0};
     uint8_t src_addr[MWIFI_ADDR_LEN] = {0x0};
+
+    char d_to_root[30] ={""};
+    size_t size1 = 0;
+
 
     MDF_LOGI("Note read task is running");
 
@@ -73,7 +50,31 @@ static void node_read_task(void *arg)
         memset(data, 0, MWIFI_PAYLOAD_LEN);
         ret = mwifi_read(src_addr, &data_type, data, &size, portMAX_DELAY);
         MDF_ERROR_CONTINUE(ret != MDF_OK, "mwifi_read, ret: %x", ret);
-        MDF_LOGI("Node receive, addr: " MACSTR ", size: %d, data: %s", MAC2STR(src_addr), size, data);
+        // MDF_LOGI("Node receive, addr: " MACSTR ", size: %d, data: %s", MAC2STR(src_addr), size, data);
+
+        if(strcmp(data,"blink") == 0)
+        {
+            blink_status = 1;
+            size1 = sprintf(d_to_root, "LED Blinking Started!");
+            mwifi_write(NULL, &data_type, d_to_root, size1, true);
+            d_to_root[0] = '\0';
+        }
+        else if(strcmp(data,"stop") == 0)
+        {
+            blink_status = 0;
+            size1 = sprintf(d_to_root, "LED Blinking Stopped!");
+            mwifi_write(NULL, &data_type, d_to_root, size1, true);
+            d_to_root[0] = '\0';
+        }
+        else
+        {
+            printf("No command is specified!");
+            size1 = sprintf(d_to_root, "No Command was Specified!");
+            mwifi_write(NULL, &data_type, d_to_root, size1, true);
+            d_to_root[0] = '\0';
+        }
+
+
     }
 
     MDF_LOGW("Note read task is exit");
@@ -213,6 +214,14 @@ void app_main()
         .mesh_type = CONFIG_DEVICE_TYPE,
     };
 
+    //----------GPIO Pin Initialization----------------
+    gpio_pad_select_gpio(BLINK_GPIO);
+    /* Set the GPIO as a push/pull output */
+    gpio_set_direction(BLINK_GPIO, GPIO_MODE_OUTPUT);
+
+
+
+
     /**
      * @brief Set the log level for serial port printing.
      */
@@ -231,17 +240,29 @@ void app_main()
     /**
      * @brief Data transfer between wifi mesh devices
      */
-    if (config.mesh_type == MESH_ROOT) {
-        xTaskCreate(root_task, "root_task", 4 * 1024,
-                    NULL, CONFIG_MDF_TASK_DEFAULT_PRIOTY, NULL);
-    } else {
-        xTaskCreate(node_write_task, "node_write_task", 4 * 1024,
-                    NULL, CONFIG_MDF_TASK_DEFAULT_PRIOTY, NULL);
-        xTaskCreate(node_read_task, "node_read_task", 4 * 1024,
-                    NULL, CONFIG_MDF_TASK_DEFAULT_PRIOTY, NULL);
-    }
+    
+    // xTaskCreate(node_write_task, "node_write_task", 4 * 1024,
+    //             NULL, CONFIG_MDF_TASK_DEFAULT_PRIOTY, NULL);
+    xTaskCreate(node_read_task, "node_read_task", 4 * 1024,
+                NULL, CONFIG_MDF_TASK_DEFAULT_PRIOTY, NULL);
+    
 
     TimerHandle_t timer = xTimerCreate("print_system_info", 10000 / portTICK_RATE_MS,
                                        true, NULL, print_system_info_timercb);
     xTimerStart(timer, 0);
+
+    while(1)
+    {
+        if(blink_status == 0)
+        {
+            gpio_set_level(BLINK_GPIO, 0);
+        }
+        else
+        {
+            gpio_set_level(BLINK_GPIO, gpio_state);
+            gpio_state ^= 1;
+        }
+
+        vTaskDelay(500 / portTICK_PERIOD_MS);
+    }
 }
